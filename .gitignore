@@ -1,0 +1,17 @@
+# Local builds and user-specific settings
+.DS_Store
+build/
+DerivedData/
+**/xcuserdata/
+*.xcuserstate
+*.ipa
+*.zip
+*.xcresult/
+__pycache__/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.mobileprovision
+connection.local.json

@@ -1,0 +1,84 @@
+name: Build MultiChat IPA (AltStore)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'iOS/**'
+      - '.github/workflows/build-unsigned-ipa.yml'
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Test OBS controller lifecycle and command protocol
+        run: python3 iOS/Tests/run_controller_tests.py
+
+      - name: Test distribution profile validation
+        run: python3 iOS/Tests/run_distribution_tests.py
+
+      - name: Build unsigned iPhone app
+        run: |
+          set -euxo pipefail
+          xcodebuild \
+            -project iOS/MultiChatViewer.xcodeproj \
+            -scheme MultiChatViewer \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+
+      - name: Package unsigned IPA for AltStore signing
+        run: |
+          set -euxo pipefail
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/MultiChatViewer.app"
+          test -d "$APP_PATH"
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          cd build
+          /usr/bin/zip -qry MultiChatViewer-unsigned.ipa Payload
+          ls -lh MultiChatViewer-unsigned.ipa
+
+      - name: Audit distribution IPA
+        run: python3 iOS/Tests/audit_distribution.py build/MultiChatViewer-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MultiChatViewer-unsigned-ipa
+          path: build/MultiChatViewer-unsigned.ipa
+          if-no-files-found: error
+
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run iPhone UI verification
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if x["name"].startswith("iPhone")))')
+          xcodebuild -project iOS/MultiChatViewer.xcodeproj -scheme OBSIntegrationTests -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE_ID" -resultBundlePath build/OBS-UI.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test
+      - name: Export screenshots
+        if: always()
+        run: |
+          mkdir -p build/screenshots
+          xcrun xcresulttool export attachments --path build/OBS-UI.xcresult --output-path build/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OBS-UI-verification
+          path: |
+            build/OBS-UI.xcresult
+            build/screenshots
