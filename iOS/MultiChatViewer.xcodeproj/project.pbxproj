@@ -165,6 +165,7 @@
             STRIP_INSTALLED_PRODUCT = YES;
             COPY_PHASE_STRIP = YES;
 			SWIFT_VERSION = 5.0;
+			SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 			TARGETED_DEVICE_FAMILY = 1;
 		}; name = Debug; };
 		AA0000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
