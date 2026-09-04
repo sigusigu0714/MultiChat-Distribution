@@ -79,6 +79,30 @@ final class OBSIntegrationUITests: XCTestCase {
         }
     }
 
+    func testAlertContentIsEnlargedAndFitsAfterRotation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--alert-focus-test"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let text = app.webViews.staticTexts["ALERT CONTENT"].firstMatch
+            XCTAssertTrue(text.waitForExistence(timeout: 15))
+            let enlarged = NSPredicate { _, _ in
+                let screen = app.frame
+                let rotated = orientation == .portrait ? screen.height > screen.width : screen.width > screen.height
+                return rotated && text.frame.width > min(screen.width, screen.height) * 0.25 &&
+                    screen.insetBy(dx: 8, dy: 8).contains(text.frame) &&
+                    abs(text.frame.midX - screen.midX) < 25
+            }
+            expectation(for: enlarged, evaluatedWith: app)
+            waitForExpectations(timeout: 15)
+            Thread.sleep(forTimeInterval: 1)
+            capture(app, orientation == .portrait ? "06-Alert-Content-Portrait" : "07-Alert-Content-Landscape")
+        }
+    }
+
     private func capture(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name

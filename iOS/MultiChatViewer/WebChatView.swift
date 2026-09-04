@@ -19,6 +19,8 @@ struct AlertCanvasLayout {
 final class AlertCanvasView: UIView, WKScriptMessageHandler {
     private(set) var web: WKWebView!
     private(set) var canvasSize = AlertCanvasLayout.standard
+    private var fitContent = false
+    private var contentRect: CGRect?
     private var lastURL: URL?
     private var lastReloadToken: UUID?
 
@@ -54,21 +56,27 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         lastURL = url
         lastReloadToken = reloadToken
         let host = url.host?.lowercased() ?? ""
-        canvasSize = (host == "streamelements.com" || host.hasSuffix(".streamelements.com"))
-            ? CGSize(width: 1920, height: 1080) : AlertCanvasLayout.standard
+        configureContentFit(host == "streamelements.com" || host.hasSuffix(".streamelements.com"))
         setNeedsLayout()
         layoutIfNeeded()
         web.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
+    func configureContentFit(_ enabled: Bool) {
+        fitContent = enabled; contentRect = nil
+        canvasSize = enabled ? CGSize(width: 1920, height: 1080) : AlertCanvasLayout.standard
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        let fitted = AlertCanvasLayout.fittedFrame(canvas: canvasSize, container: bounds.size)
+        let focus = contentRect ?? CGRect(origin: .zero, size: canvasSize)
+        let fitted = AlertCanvasLayout.fittedFrame(canvas: focus.size, container: bounds.size)
         guard fitted.width > 0 else { return }
         web.transform = .identity
         web.bounds = CGRect(origin: .zero, size: canvasSize)
-        web.center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let scale = fitted.width / canvasSize.width
+        let scale = fitted.width / focus.width
+        web.center = CGPoint(x: bounds.midX + (canvasSize.width / 2 - focus.midX) * scale,
+                             y: bounds.midY + (canvasSize.height / 2 - focus.midY) * scale)
         web.transform = CGAffineTransform(scaleX: scale, y: scale)
     }
 
@@ -80,8 +88,15 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         // Grow only within this page, avoiding scale jumps during alert animations.
         let next = CGSize(width: max(canvasSize.width, min(CGFloat(width), 8192)),
                           height: max(canvasSize.height, min(CGFloat(height), 8192)))
-        guard next.width > canvasSize.width + 1 || next.height > canvasSize.height + 1 else { return }
         canvasSize = next
+        if fitContent {
+            if let left = size["left"], let top = size["top"], let right = size["right"], let bottom = size["bottom"],
+               [left, top, right, bottom].allSatisfy({ $0.isFinite }), right > left, bottom > top {
+                let rect = CGRect(x: left, y: top, width: right-left, height: bottom-top).insetBy(dx: -24, dy: -24)
+                let clipped = rect.intersection(CGRect(origin: .zero, size: canvasSize))
+                contentRect = clipped.width > 1 && clipped.height > 1 ? clipped : nil
+            } else { contentRect = nil }
+        }
         setNeedsLayout()
     }
 
@@ -104,10 +119,66 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         const root = document.documentElement, body = document.body;
         const width = Math.max(innerWidth, root.scrollWidth, body ? body.scrollWidth : 0);
         const height = Math.max(innerHeight, root.scrollHeight, body ? body.scrollHeight : 0);
-        const key = `${width}:${height}`;
+        const host = location.hostname.toLowerCase();
+        const focus = host === 'streamelements.com' || host.endsWith('.streamelements.com') || location.protocol === 'about:';
+        const measurement = focus ? (() => {
+          const root = document.documentElement, body = document.body;
+          const result = {width:Math.max(innerWidth,root.scrollWidth,body?body.scrollWidth:0),
+            height:Math.max(innerHeight,root.scrollHeight,body?body.scrollHeight:0),viewportWidth:innerWidth};
+          let box = null, visited = 0;
+          const add = (r,ox,oy,sx,sy) => {
+            const l=ox+r.left*sx,t=oy+r.top*sy,rr=ox+r.right*sx,b=oy+r.bottom*sy;
+            if (![l,t,rr,b].every(Number.isFinite) || rr-l<1 || b-t<1 || rr<0 || b<0 || l>8192 || t>8192) return;
+            if (!box) box={left:l,top:t,right:rr,bottom:b};
+            else {box.left=Math.min(box.left,l);box.top=Math.min(box.top,t);box.right=Math.max(box.right,rr);box.bottom=Math.max(box.bottom,b);}
+          };
+          const scan = (doc,ox,oy,sx,sy,depth) => {
+            const win=doc.defaultView;if(!doc.body || !win || depth>3) return;
+            const cache=new WeakMap();
+            const visible=el => {
+              if(!el || el.nodeType!==1) return true;
+              if(cache.has(el)) return cache.get(el);
+              const s=win.getComputedStyle(el);
+              const ok=s.display!=='none' && s.visibility!=='hidden' && Number(s.opacity)>.02 && visible(el.parentElement);
+              cache.set(el,ok);return ok;
+            };
+            const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
+            let node;
+            while((node=walker.nextNode()) && ++visited<=3000) {
+              if(node.nodeType===3) {
+                const p=node.parentElement;
+                if(!p || /^(SCRIPT|STYLE|NOSCRIPT|OPTION)$/.test(p.tagName) || !node.textContent.trim() || !visible(p))continue;
+                const range=doc.createRange();range.selectNodeContents(node);
+                for(const r of range.getClientRects())add(r,ox,oy,sx,sy);
+              } else if(visible(node)) {
+                const r=node.getBoundingClientRect();if(r.width<1 || r.height<1)continue;
+                if(node.tagName==='IFRAME') {
+                  try {
+                    const child=node.contentDocument;
+                    if(child && child.body && node.contentWindow.innerWidth>0) {
+                      scan(child,ox+r.left*sx,oy+r.top*sy,sx*r.width/node.contentWindow.innerWidth,sy*r.height/node.contentWindow.innerHeight,depth+1);
+                      continue;
+                    }
+                  }catch(_){}
+                  // Cross-origin frames cannot be inspected; preserve their full rectangle.
+                  add(r,ox,oy,sx,sy);continue;
+                }
+                const style=win.getComputedStyle(node);
+                const image=/^(IMG|VIDEO|CANVAS|SVG)$/.test(node.tagName.toUpperCase());
+                const background=style.backgroundImage!=='none' ||
+                  (style.backgroundColor!=='transparent' && !/rgba\([^)]*,\s*0\s*\)/.test(style.backgroundColor));
+                if(image || background)add(r,ox,oy,sx,sy);
+              }
+            }
+          };
+          scan(document,0,0,1,1,0);
+          if(box) Object.assign(result,box);
+          return result;
+        })() : {width, height};
+        const key = JSON.stringify(measurement);
         if (key === previous) return;
         previous = key;
-        window.webkit.messageHandlers.alertCanvasSize.postMessage({width, height});
+        window.webkit.messageHandlers.alertCanvasSize.postMessage(measurement);
       };
       const schedule = () => {
         if (!scheduled) { scheduled = true; requestAnimationFrame(measure); }
@@ -118,6 +189,7 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
       window.addEventListener('resize', schedule);
       document.addEventListener('load', schedule, true);
       if (document.fonts) document.fonts.ready.then(schedule);
+      setInterval(schedule, 400);
       schedule();
     })();
     """#
@@ -176,6 +248,22 @@ struct AlertOverlay: View {
 }
 
 #if DEBUG
+struct AlertFocusFixture: UIViewRepresentable {
+    func makeUIView(context: Context) -> AlertCanvasView {
+        let view = AlertCanvasView(); view.configureContentFit(true)
+        view.web.loadHTMLString(#"""
+        <!doctype html><html><head><style>
+        html,body {margin:0;background:transparent;width:1920px;height:1080px;}
+        #alert {position:absolute;left:70px;top:440px;width:500px;height:210px;background:#163955;color:white;border:4px solid #25dfa6;box-sizing:border-box;}
+        .media {width:140px;height:120px;margin:12px auto;background:#f5a34c;border-radius:28px;}
+        p {font:24px sans-serif;margin:0;text-align:center;}
+        </style></head><body><div id="alert"><div class="media"></div><p>ALERT CONTENT</p></div></body></html>
+        """#, baseURL:nil)
+        return view
+    }
+    func updateUIView(_ view: AlertCanvasView, context: Context) {}
+    static func dismantleUIView(_ view: AlertCanvasView, coordinator: ()) { view.stop() }
+}
 struct AlertLayoutFixture: UIViewRepresentable {
     func makeUIView(context: Context) -> AlertCanvasView {
         let view = AlertCanvasView()
