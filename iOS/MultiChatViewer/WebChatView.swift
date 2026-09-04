@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import AVFoundation
 
 // Keep the browser at widget dimensions and fit the entire canvas into the phone.
 // Resizing the phone must not crop a desktop-sized overlay or reload its audio.
@@ -24,6 +25,7 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
     private var lastURL: URL?
     private var lastReloadToken: UUID?
     private var queueSource: UUID?
+    private var nativeAlertPlayer: AVPlayer?
     func configureQueue(_ enabled: Bool) {
         guard enabled, queueSource == nil else { return }
         let id = UUID(); queueSource = id
@@ -64,6 +66,7 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         addSubview(web)
         // A weak proxy avoids a web view -> handler -> view retain cycle.
         configuration.userContentController.add(WeakAlertSizeHandler(self), contentWorld: .defaultClient, name: "alertCanvasSize")
+        configuration.userContentController.add(WeakNativeAlertAudioHandler(self), contentWorld: .page, name: "audioURLHandler")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -73,6 +76,13 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         lastURL = url
         lastReloadToken = reloadToken
         let host = url.host?.lowercased() ?? ""
+        if host == "streamlabs.com" || host.hasSuffix(".streamlabs.com") {
+            // Streamlabs exposes its native audio bridge only when UAParser sees iOS.
+            // The desktop canvas preference otherwise reports macOS and skips it.
+            web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        } else {
+            web.customUserAgent = nil
+        }
         configureContentFit(host == "streamelements.com" || host.hasSuffix(".streamelements.com"))
         setNeedsLayout()
         layoutIfNeeded()
@@ -118,6 +128,8 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
     }
 
     func stop() {
+        nativeAlertPlayer?.pause(); nativeAlertPlayer = nil
+        web.configuration.userContentController.removeScriptMessageHandler(forName: "audioURLHandler", contentWorld: .page)
         if let id = queueSource {
             queueSource = nil
             web.configuration.userContentController.removeScriptMessageHandler(forName: "mcAlertBridge")
@@ -128,6 +140,19 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         web.stopLoading()
         web.configuration.userContentController.removeScriptMessageHandler(forName: "alertCanvasSize", contentWorld: .defaultClient)
         web.loadHTMLString("", baseURL: nil)
+    }
+
+    func playStreamlabsAudio(_ body: Any, origin: WKSecurityOrigin) {
+        let host = origin.host.lowercased()
+        guard host == "streamlabs.com" || host.hasSuffix(".streamlabs.com"),
+              let value = body as? [String: Any], let state = value["state"] as? String else { return }
+        if state == "stop" { nativeAlertPlayer?.pause(); nativeAlertPlayer = nil; return }
+        guard state == "play", let raw = value["url"] as? String,
+              raw.utf8.count <= 4096, let parts = URLComponents(string: raw),
+              parts.scheme == "https", parts.user == nil, parts.password == nil,
+              let url = parts.url else { return }
+        let player = AVPlayer(url: url)
+        nativeAlertPlayer?.pause(); nativeAlertPlayer = player; player.play()
     }
 
     private static let measurementScript = #"""
@@ -224,6 +249,14 @@ private final class WeakAlertSizeHandler: NSObject, WKScriptMessageHandler {
     init(_ target: AlertCanvasView) { self.target = target }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         target?.userContentController(userContentController, didReceive: message)
+    }
+}
+
+private final class WeakNativeAlertAudioHandler: NSObject, WKScriptMessageHandler {
+    weak var target: AlertCanvasView?
+    init(_ target: AlertCanvasView) { self.target = target }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.playStreamlabsAudio(message.body, origin: message.frameInfo.securityOrigin)
     }
 }
 
