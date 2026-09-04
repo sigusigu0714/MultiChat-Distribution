@@ -27,7 +27,7 @@
   const later = window.setTimeout.bind(window);
   const items = new Map();
   const media = new Set(), audioNodes = new Set();
-  let serial = 0, active = null, ready = false, failed = false, inFlight = null;
+  let serial = 0, active = null, ready = false, failed = false, bypass = false, inFlight = null;
   const unsent = [];
   const send = (type, sequence = 0) => {
     const message = JSON.stringify({type, sequence});
@@ -49,7 +49,7 @@
     active = null; items.delete(sequence); send('done', sequence);
   };
   window.__mcAlertQueue = Object.freeze({
-    allowsMedia() { return !failed && active !== null; },
+    allowsMedia() { return bypass || (!failed && active !== null); },
     mediaFault: fault,
     trackMedia(element) { media.add(element); },
     trackAudio(node) { audioNodes.add(node); node.addEventListener('ended', () => audioNodes.delete(node), {once:true}); },
@@ -194,5 +194,8 @@
       connected(); return true;
     });
   } else fault();
-  later(() => { if (!ready) fault(); }, 30000);
+  // Some saved browser sources use Streamlabs as a wrapper around an external
+  // frame rather than the Alert Box runtime. Keep that source usable without
+  // disabling every compatible widget in the shared queue.
+  later(() => { if (!ready && !failed) { bypass = true; send('unsupported'); } }, 30000);
 })();

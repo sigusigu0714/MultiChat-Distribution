@@ -19,6 +19,7 @@ final class AlertPlaybackQueue: ObservableObject {
     private var active: Ticket?
     private var stopping = false
     private var failed = false
+    private var hasPassThrough = false
 
     func register(_ id: UUID, web: WKWebView, show: @escaping (Bool) -> Void) {
         failed = false
@@ -34,6 +35,7 @@ final class AlertPlaybackQueue: ObservableObject {
         let sequence = (event["sequence"] as? NSNumber)?.int64Value ?? 0
         switch type {
         case "ready": report()
+        case "unsupported": passThrough(source)
         case "fault": fault()
         case "stalled":
             if active == Ticket(source: source, sequence: sequence) { status = "通知の終了待ちが長くなっています。停止した場合は設定から再読み込みしてください。" }
@@ -56,6 +58,13 @@ final class AlertPlaybackQueue: ObservableObject {
             }
         default: break
         }
+    }
+    private func passThrough(_ id: UUID) {
+        waiting.removeAll { $0.source == id }
+        guard let player = players.removeValue(forKey: id), active?.source != id else { return }
+        hasPassThrough = true
+        player.web?.setAllMediaPlaybackSuspended(false) { player.show(true) }
+        report()
     }
     func unregister(_ id: UUID, after: @escaping () -> Void) {
         waiting.removeAll { $0.source == id }
@@ -85,7 +94,7 @@ final class AlertPlaybackQueue: ObservableObject {
         report()
     }
     private func report() {
-        if !failed { status = "順番再生：\(active == nil ? "待機中" : "再生中")・待ち \(waiting.count) 件" }
+        if !failed { status = hasPassThrough ? "順番再生：一部は通常表示・その他は順番再生（待ち \(waiting.count) 件）" : "順番再生：\(active == nil ? "待機中" : "再生中")・待ち \(waiting.count) 件" }
     }
     private func fault() {
         failed = true

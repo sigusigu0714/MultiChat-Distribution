@@ -92,5 +92,9 @@ async function until(end) {
   assert.equal(vm.runInContext('requests.join()',pressure),'1,2,2,3','capacity retry cannot reorder later notifications');
   await vm.runInContext('new HTMLMediaElement().play().then(()=>{throw Error("unowned audio played")},()=>{})',pressure);
   assert.equal(vm.runInContext('__mcAlertQueue.allowsMedia()',pressure),false);
-  console.log('PASS: three-service FIFO, delayed assets/TTS, HTML/WebAudio guards, audio tail, capacity retry ordering, constructor restoration and unsupported host');
+  const wrapped=page('streamlabs.com');
+  await until(47000);
+  assert(events.some(e=>e[0]==='streamlabs.com' && e[1]==='unsupported'));
+  assert.equal(vm.runInContext('__mcAlertQueue.allowsMedia()',wrapped),true,'unsupported wrapper remains usable');
+  console.log('PASS: three-service FIFO, delayed assets/TTS, media guards, retry ordering and wrapper isolation');
 })().catch(error=>{console.error(error);process.exitCode=1});
