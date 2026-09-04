@@ -25,12 +25,16 @@ def audit(path):
     issues = []
     with zipfile.ZipFile(path) as archive:
         files = [i for i in archive.infolist() if not i.is_dir()]
-        permitted = {'MultiChatViewer', 'Info.plist', 'PkgInfo', 'Assets.car', 'AppIcon60x60@2x.png'}
+        permitted = {'MultiChatViewer', 'Info.plist', 'PkgInfo', 'Assets.car', 'AppIcon60x60@2x.png', 'alert-queue.js'}
         for item in files:
             prefix = 'Payload/MultiChatViewer.app/'
             if not item.filename.startswith(prefix) or item.filename[len(prefix):] not in permitted:
                 issues.append('Unexpected bundled file: ' + item.filename)
             data = archive.read(item)
+            if item.filename == 'Payload/MultiChatViewer.app/alert-queue.js':
+                expected = (Path(__file__).resolve().parents[1] / 'MultiChatViewer/alert-queue.js').read_bytes()
+                if data.replace(b'\r\n', b'\n') != expected.replace(b'\r\n', b'\n'):
+                    issues.append('Bundled queue adapter differs from reviewed source')
             for pattern in SECRET_PATTERNS:
                 if re.search(pattern, data):
                     issues.append('Credential pattern in ' + item.filename)
@@ -62,6 +66,8 @@ def audit(path):
                     issues.append('Unexpected display name')
         if 'Payload/MultiChatViewer.app/Info.plist' not in archive.namelist():
             issues.append('Missing application metadata')
+        if 'Payload/MultiChatViewer.app/alert-queue.js' not in archive.namelist():
+            issues.append('Missing notification queue adapter')
     if issues:
         raise SystemExit('\n'.join(sorted(set(issues))))
     print(json.dumps({'result':'PASS', 'checks':['bundle contents', 'unsigned metadata',
