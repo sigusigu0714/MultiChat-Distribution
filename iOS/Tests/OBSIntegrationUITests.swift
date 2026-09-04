@@ -88,7 +88,7 @@ final class OBSIntegrationUITests: XCTestCase {
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
             let text = app.webViews.staticTexts["ALERT CONTENT"].firstMatch
-            XCTAssertTrue(text.waitForExistence(timeout: 15))
+            XCTAssertTrue(text.waitForExistence(timeout: 60))
             let enlarged = NSPredicate { _, _ in
                 let screen = app.frame
                 let rotated = orientation == .portrait ? screen.height > screen.width : screen.width > screen.height

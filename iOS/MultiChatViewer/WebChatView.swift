@@ -229,10 +229,12 @@ struct AlertOverlay: View {
     @EnvironmentObject var store: AppStore
     var body: some View {
         ZStack {
-            if let url = validAlertWidgetURL(store.doneruWidgetURL) {
-                AlertWebView(url: url, reloadToken: $store.alertReloadToken)
-                    .allowsHitTesting(false)
-                    .opacity(store.alertsVisible ? 1 : 0)
+            ForEach(0..<5, id: \.self) { index in
+                if let url = validAlertWidgetURL(store.standaloneWidgetURLs[index]) {
+                    AlertWebView(url: url, reloadToken: $store.alertReloadToken)
+                        .allowsHitTesting(false)
+                        .opacity(store.alertsVisible ? 1 : 0)
+                }
             }
             ForEach(store.channels.filter { $0.enabled }) { channel in
                 if let raw = KeychainStore.read(channel.alertURLKey), let url = URL(string: raw), !raw.isEmpty {

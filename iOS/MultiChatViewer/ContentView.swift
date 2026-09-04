@@ -12,6 +12,22 @@ final class AppStore: ObservableObject {
     @Published var events: [UnifiedEvent] = []
     @Published private(set) var doneruWidgetURL = KeychainStore.read("doneru-widget-url") ?? ""
 
+    @Published private(set) var extraWidgetURLs = (1..<5).map { KeychainStore.read("standalone-widget-\($0)") ?? "" }
+    var standaloneWidgetURLs: [String] { [doneruWidgetURL] + extraWidgetURLs }
+    func saveStandaloneWidget(_ index: Int, _ raw: String) -> Bool {
+        guard (0..<5).contains(index) else { return false }
+        if index == 0 { return saveDoneruWidget(raw) }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty || validAlertWidgetURL(value) != nil else { return false }
+        let key = "standalone-widget-\(index)"
+        if value.isEmpty { KeychainStore.delete(key) }
+        else { KeychainStore.write(key, value: value) }
+        extraWidgetURLs[index - 1] = value
+        if !value.isEmpty { alertsVisible = true }
+        alertReloadToken = UUID()
+        return true
+    }
+
     func saveDoneruWidget(_ raw: String) -> Bool {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.isEmpty || validAlertWidgetURL(value) != nil else { return false }
@@ -2427,13 +2443,40 @@ struct FlowLayout: Layout {
     }
 }
 
+private struct StandaloneWidgetSettingsRow: View {
+    @EnvironmentObject var store: AppStore
+    let index: Int
+    @State private var draft: String? = nil
+    @State private var message = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ウィジェット \(index + 1)").font(.headline)
+            SecureField("ウィジェットURL（HTTPS）", text: Binding(
+                get: { draft ?? store.standaloneWidgetURLs[index] },
+                set: { draft = $0; message = "" }
+            ))
+            .textInputAutocapitalization(.never).autocorrectionDisabled()
+            .accessibilityIdentifier(index == 0 ? "doneru-url" : "widget-url-\(index)")
+            HStack {
+                Button("保存して再生") {
+                    message = store.saveStandaloneWidget(index, draft ?? store.standaloneWidgetURLs[index])
+                        ? "保存しました。MultiChat画面で通知をテストしてください。"
+                        : "HTTPSのウィジェットURLを確認してください。"
+                }.accessibilityIdentifier(index == 0 ? "save-doneru" : "save-widget-\(index)")
+                Button("停止・削除", role: .destructive) {
+                    _ = store.saveStandaloneWidget(index, ""); draft = ""; message = "停止しました。"
+                }.accessibilityIdentifier(index == 0 ? "delete-doneru" : "delete-widget-\(index)")
+            }.buttonStyle(.borderless)
+            if !message.isEmpty { Text(message).font(.caption) }
+        }.padding(.vertical, 4)
+    }
+}
+
 struct SimpleSettingsView: View {
     @State private var showConnectionSetup = false
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) var dismiss
 
-    @State private var draftDoneruURL: String? = nil
-    @State private var doneruMessage = ""
     @State private var draftAlertURLs:
         [UUID: String] = [:]
 
@@ -2660,25 +2703,13 @@ struct SimpleSettingsView: View {
                     )
                 }
 
-                Section("どねる（チャット連携なしで使えます）") {
-                    Text("どねるのAlert Boxにある「アドレス表示」でコピーしたURLを入力してください。寄付ページのURLではありません。")
+                Section("ウィジェット（最大5個）") {
+                    Text("どねる・StreamElements・StreamlabsのウィジェットURLを登録できます。チャット連携は不要です。")
                         .font(.caption).foregroundStyle(.secondary)
-                    SecureField("どねる Alert Box URL（HTTPS）", text: Binding(
-                        get: { draftDoneruURL ?? store.doneruWidgetURL },
-                        set: { draftDoneruURL = $0; doneruMessage = "" }
-                    ))
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .accessibilityIdentifier("doneru-url")
-                    Button("どねるを保存して再生") {
-                        doneruMessage = store.saveDoneruWidget(draftDoneruURL ?? store.doneruWidgetURL)
-                            ? "保存しました。設定を閉じ、MultiChat画面でどねるの通知テストを実行してください。"
-                            : "HTTPSのAlert Box URLを確認してください。"
-                    }.accessibilityIdentifier("save-doneru")
-                    Button("どねるを停止・削除", role: .destructive) {
-                        _ = store.saveDoneruWidget(""); draftDoneruURL = ""; doneruMessage = "停止しました。"
+                    ForEach(0..<5, id: \.self) { index in
+                        StandaloneWidgetSettingsRow(index: index)
                     }
-                    if !doneruMessage.isEmpty { Text(doneruMessage).font(.caption) }
-                    Text("URLは端末のキーチェーンに保存します。他人に公開しないでください。")
+                    Text("登録済みのどねるはウィジェット1に引き継ぎます。URLは端末のキーチェーンに保存します。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
