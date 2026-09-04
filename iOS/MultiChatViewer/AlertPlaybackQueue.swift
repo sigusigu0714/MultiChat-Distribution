@@ -25,7 +25,6 @@ final class AlertPlaybackQueue: ObservableObject {
         failed = false
         players[id] = Player(web: web, show: show)
         show(false)
-        web.setAllMediaPlaybackSuspended(true, completionHandler: {})
     }
     func receive(_ raw: String, source: UUID) {
         guard !failed, raw.utf8.count <= 256, let player = players[source],
@@ -52,10 +51,7 @@ final class AlertPlaybackQueue: ObservableObject {
             guard active == Ticket(source: source, sequence: sequence), !stopping else { return }
             stopping = true
             player.show(false)
-            player.web?.setAllMediaPlaybackSuspended(true) { [weak self] in
-                guard let self, self.active == Ticket(source: source, sequence: sequence) else { return }
-                self.active = nil; self.stopping = false; self.drain()
-            }
+            active = nil; stopping = false; drain()
         default: break
         }
     }
@@ -63,19 +59,15 @@ final class AlertPlaybackQueue: ObservableObject {
         waiting.removeAll { $0.source == id }
         guard let player = players.removeValue(forKey: id), active?.source != id else { return }
         hasPassThrough = true
-        player.web?.setAllMediaPlaybackSuspended(false) { player.show(true) }
+        player.show(true)
         report()
     }
     func unregister(_ id: UUID, after: @escaping () -> Void) {
         waiting.removeAll { $0.source == id }
         guard let player = players.removeValue(forKey: id) else { after(); return }
         player.show(false)
-        if active?.source == id { stopping = true }
-        guard let web = player.web else { after(); return }
-        web.setAllMediaPlaybackSuspended(true) { [weak self] in
-            if self?.active?.source == id { self?.active = nil; self?.stopping = false }
-            after(); self?.drain()
-        }
+        if active?.source == id { active = nil; stopping = false }
+        after(); drain()
     }
     private func drain() {
         guard !failed else { return }
@@ -83,12 +75,9 @@ final class AlertPlaybackQueue: ObservableObject {
             let next = waiting.removeFirst()
             guard let player = players[next.source], let web = player.web else { fault(); return }
             active = next
-            web.setAllMediaPlaybackSuspended(false) { [weak self, weak web] in
-                guard let self, !self.failed, self.active == next, !self.stopping else { return }
-                player.show(true)
-                web?.evaluateJavaScript("window.__mcAlertQueue?.grant(\(next.sequence))") { _, error in
-                    if error != nil { self.fault() }
-                }
+            player.show(true)
+            web.evaluateJavaScript("window.__mcAlertQueue?.grant(\(next.sequence))") { [weak self] _, error in
+                if error != nil { self?.fault() }
             }
         }
         report()
@@ -102,7 +91,6 @@ final class AlertPlaybackQueue: ObservableObject {
         waiting.removeAll()
         players.values.forEach { player in
             player.show(false)
-            player.web?.setAllMediaPlaybackSuspended(true, completionHandler: {})
         }
     }
 }
