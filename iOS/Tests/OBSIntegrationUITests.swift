@@ -44,6 +44,29 @@ final class OBSIntegrationUITests: XCTestCase {
         capture(app, "03-OBS-Offline-Controls")
     }
 
+    func testAlertCanvasFitsAllFourCorners() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--alert-layout-test"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let corner = app.webViews.staticTexts["BOTTOM RIGHT"].firstMatch
+            XCTAssertTrue(corner.waitForExistence(timeout: 15))
+            let fits = NSPredicate { _, _ in
+                let screen = app.frame.insetBy(dx: 4, dy: 4)
+                return ["TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM RIGHT"].allSatisfy { label in
+                    let element = app.webViews.staticTexts[label].firstMatch
+                    return element.exists && !element.frame.isEmpty && screen.contains(element.frame)
+                }
+            }
+            expectation(for: fits, evaluatedWith: app)
+            waitForExpectations(timeout: 15)
+            capture(app, orientation == .portrait ? "04-Alert-Fit-Portrait" : "05-Alert-Fit-Landscape")
+        }
+    }
+
     private func capture(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

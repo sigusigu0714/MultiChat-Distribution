@@ -1,4 +1,4 @@
-MultiChat 2.3 配布版
+MultiChat 2.3.1 配布版
 
 1. MultiChat.ipaを、ご自身のAltStoreなどで署名してインストールします。
 2. 初回の「接続セットアップ」で、利用を許可されたMultiChat対応サーバーのURLを入力します。

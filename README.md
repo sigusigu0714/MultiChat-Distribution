@@ -1,10 +1,10 @@
 # MultiChat
 
-MultiChat 2.3 は、Twitch・KICK・YouTubeのチャット表示と、任意のOBSリモート操作をまとめるiPhone向けアプリです。
+MultiChat 2.3.1 は、Twitch・KICK・YouTubeのチャット表示と、任意のOBSリモート操作をまとめるiPhone向けアプリです。
 
 ## ダウンロード
 
-[最新版の配布ファイル](../../releases/latest)から `MultiChat-2.3-Distribution.zip` または `MultiChat.ipa` を取得してください。ZIPにはIPA・使い方・接続設定の書式見本・検査結果が入っています。
+[最新版の配布ファイル](../../releases/latest)から `MultiChat-2.3.1-Distribution.zip` または `MultiChat.ipa` を取得してください。ZIPにはIPA・使い方・接続設定の書式見本・検査結果が入っています。
 
 IPAは未署名です。AltStore等を使い、利用者自身のアカウントで署名してインストールしてください。iOS 17以降が必要です。一部の翻訳機能はiOS 18以降で利用できます。
 
@@ -63,3 +63,7 @@ GitHub Actionsは次を実行します。
 - iPhoneシミュレーターでの初回設定・OBS画面のテスト
 
 このリポジトリには運用環境の認証情報を登録しないでください。
+
+## 2.3.1 の変更
+
+アラートを縦横比を保って画面内へ自動縮小します。大きなウィジェットの読み込み後も表示範囲を調整し、画面の回転で再読み込みせず再配置します。ノッチやタブバーを避けて表示します。

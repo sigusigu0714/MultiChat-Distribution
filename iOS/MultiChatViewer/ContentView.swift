@@ -1227,7 +1227,6 @@ struct ContentView: View {
                 }
 
                 AlertOverlay()
-                    .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
             .sheet(isPresented: $showOBSRemote) { OBSControlView() }

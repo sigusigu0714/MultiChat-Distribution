@@ -24,6 +24,9 @@ jobs:
       - name: Test distribution profile validation
         run: python3 iOS/Tests/run_distribution_tests.py
 
+      - name: Test alert canvas fitting
+        run: python3 iOS/Tests/run_alert_layout_tests.py
+
       - name: Build unsigned iPhone app
         run: |
           set -euxo pipefail
