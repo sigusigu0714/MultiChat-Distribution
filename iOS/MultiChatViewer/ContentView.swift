@@ -144,8 +144,8 @@ final class AppStore: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setCategory(
             .playback,
-            mode: .spokenAudio,
-            options: [.duckOthers]
+            mode: .default,
+            options: [.mixWithOthers]
         )
         try? AVAudioSession.sharedInstance().setActive(true)
 
