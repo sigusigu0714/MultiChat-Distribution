@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class OBSIntegrationUITests: XCTestCase {
     func testChatOBSNavigationAndOfflineControls() {
@@ -49,9 +50,17 @@ final class OBSIntegrationUITests: XCTestCase {
         app.launchArguments = ["--alert-layout-test"]
         XCUIDevice.shared.orientation = .portrait
         app.launch()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow"].firstMatch
+        if allow.waitForExistence(timeout: 8) { allow.tap() }
         defer { XCUIDevice.shared.orientation = .portrait }
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
+            let rotated = NSPredicate { _, _ in
+                orientation == .portrait ? app.frame.height > app.frame.width : app.frame.width > app.frame.height
+            }
+            expectation(for: rotated, evaluatedWith: app)
+            waitForExpectations(timeout: 10)
             let corner = app.webViews.staticTexts["BOTTOM RIGHT"].firstMatch
             XCTAssertTrue(corner.waitForExistence(timeout: 15))
             let fits = NSPredicate { _, _ in
@@ -63,6 +72,9 @@ final class OBSIntegrationUITests: XCTestCase {
             }
             expectation(for: fits, evaluatedWith: app)
             waitForExpectations(timeout: 15)
+            XCTAssertFalse(springboard.alerts.firstMatch.exists)
+            // Accessibility geometry updates before the rotation compositor finishes.
+            Thread.sleep(forTimeInterval: 1)
             capture(app, orientation == .portrait ? "04-Alert-Fit-Portrait" : "05-Alert-Fit-Landscape")
         }
     }
