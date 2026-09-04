@@ -7,7 +7,9 @@ struct MultiChatViewerApp: App {
     @StateObject private var twitchChat = TwitchCommentController()
     @ViewBuilder private var rootView: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--alert-focus-test") {
+        if ProcessInfo.processInfo.arguments.contains("--alert-queue-test") {
+            AlertQueueFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--alert-focus-test") {
             AlertFocusFixture().padding(8)
         } else if ProcessInfo.processInfo.arguments.contains("--alert-layout-test") {
             AlertLayoutFixture().padding(8)

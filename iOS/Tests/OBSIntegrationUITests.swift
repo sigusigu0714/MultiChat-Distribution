@@ -109,4 +109,13 @@ final class OBSIntegrationUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    func testCrossWebViewNotificationQueue() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--alert-queue-test"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        XCTAssertTrue(app.staticTexts["QUEUE PASS"].waitForExistence(timeout: 60))
+        capture(app, "09-Notification-Queue")
+    }
 }

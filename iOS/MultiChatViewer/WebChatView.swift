@@ -30,7 +30,12 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         let controller = web.configuration.userContentController
         controller.add(AlertQueueBridge(source: id), name: "mcAlertBridge")
         if let path = Bundle.main.url(forResource: "alert-queue", withExtension: "js"),
-           let script = try? String(contentsOf: path, encoding: .utf8) {
+           var script = try? String(contentsOf: path, encoding: .utf8) {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--alert-queue-test") {
+                script = script.replacingOccurrences(of: "const host = location.hostname.toLowerCase();", with: "const host = 'doneru.jp';")
+            }
+            #endif
             controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         AlertPlaybackQueue.shared.register(id, web: web) { [weak self] visible in self?.alpha = visible ? 1 : 0 }
@@ -273,6 +278,56 @@ struct AlertOverlay: View {
 }
 
 #if DEBUG
+struct AlertQueueFixture: UIViewRepresentable {
+    func makeUIView(context: Context) -> QueueFixtureRoot { QueueFixtureRoot() }
+    func updateUIView(_ view: QueueFixtureRoot, context: Context) {}
+    static func dismantleUIView(_ view: QueueFixtureRoot, coordinator: ()) { view.stop() }
+}
+
+final class QueueFixtureRoot: UIView, WKScriptMessageHandler {
+    private let label = UILabel()
+    private var widgets: [AlertCanvasView] = []
+    private var starts: [Int: Double] = [:]
+    private var ends: [Int: Double] = [:]
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .white
+        for index in 0..<3 {
+            let view = AlertCanvasView()
+            view.configureQueue(true)
+            view.web.configuration.userContentController.add(self, name: "fixtureLog")
+            widgets.append(view); addSubview(view)
+            view.web.loadHTMLString("""
+                <html><body><p>QUEUE FIXTURE \(index)</p><script>
+                class Box {
+                  constructor(){this.resolver=null}push(){}clear(){}
+                  startEvent(){window.webkit.messageHandlers.fixtureLog.postMessage({index:\(index),type:'start',time:Date.now()});
+                    return new Promise(resolve=>setTimeout(()=>{window.webkit.messageHandlers.fixtureLog.postMessage({index:\(index),type:'end',time:Date.now()});resolve()},800))}
+                }new Box().startEvent();
+                </script></body></html>
+                """, baseURL: nil)
+        }
+        label.text = "QUEUE WAITING"; label.textAlignment = .center
+        label.textColor = .black; addSubview(label)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        widgets.forEach { $0.frame = bounds.insetBy(dx: 8, dy: 70) }
+        label.frame = CGRect(x: 0, y: 20, width: bounds.width, height: 50)
+    }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let data = message.body as? [String: Any], let index = data["index"] as? Int,
+              let time = data["time"] as? Double, let type = data["type"] as? String else { return }
+        if type == "start" { starts[index] = time } else { ends[index] = time }
+        if ends.count == 3 && starts.count == 3 {
+            let order = starts.keys.sorted { starts[$0]! < starts[$1]! }
+            label.text = zip(order, order.dropFirst()).allSatisfy { ends[$0.0]! <= starts[$0.1]! } ? "QUEUE PASS" : "QUEUE OVERLAP"
+        }
+    }
+    func stop() { widgets.forEach { $0.web.configuration.userContentController.removeScriptMessageHandler(forName: "fixtureLog"); $0.stop() } }
+}
+
 struct AlertFocusFixture: UIViewRepresentable {
     func makeUIView(context: Context) -> AlertCanvasView {
         let view = AlertCanvasView(); view.configureContentFit(true)
