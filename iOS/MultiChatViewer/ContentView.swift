@@ -10,6 +10,18 @@ import Translation
 final class AppStore: ObservableObject {
     @Published var channels: [ChannelConfig] = [] { didSet { saveChannels() } }
     @Published var events: [UnifiedEvent] = []
+    @Published private(set) var doneruWidgetURL = KeychainStore.read("doneru-widget-url") ?? ""
+
+    func saveDoneruWidget(_ raw: String) -> Bool {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty || validAlertWidgetURL(value) != nil else { return false }
+        if value.isEmpty { KeychainStore.delete("doneru-widget-url") }
+        else { KeychainStore.write("doneru-widget-url", value: value) }
+        doneruWidgetURL = value
+        if !value.isEmpty { alertsVisible = true }
+        alertReloadToken = UUID()
+        return true
+    }
 
     @Published var serverURL =
         UserDefaults.standard.string(forKey: "serverURL")
@@ -2420,6 +2432,8 @@ struct SimpleSettingsView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) var dismiss
 
+    @State private var draftDoneruURL: String? = nil
+    @State private var doneruMessage = ""
     @State private var draftAlertURLs:
         [UUID: String] = [:]
 
@@ -2646,9 +2660,31 @@ struct SimpleSettingsView: View {
                     )
                 }
 
+                Section("どねる（チャット連携なしで使えます）") {
+                    Text("どねるのAlert Boxにある「アドレス表示」でコピーしたURLを入力してください。寄付ページのURLではありません。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    SecureField("どねる Alert Box URL（HTTPS）", text: Binding(
+                        get: { draftDoneruURL ?? store.doneruWidgetURL },
+                        set: { draftDoneruURL = $0; doneruMessage = "" }
+                    ))
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityIdentifier("doneru-url")
+                    Button("どねるを保存して再生") {
+                        doneruMessage = store.saveDoneruWidget(draftDoneruURL ?? store.doneruWidgetURL)
+                            ? "保存しました。設定を閉じ、MultiChat画面でどねるの通知テストを実行してください。"
+                            : "HTTPSのAlert Box URLを確認してください。"
+                    }.accessibilityIdentifier("save-doneru")
+                    Button("どねるを停止・削除", role: .destructive) {
+                        _ = store.saveDoneruWidget(""); draftDoneruURL = ""; doneruMessage = "停止しました。"
+                    }
+                    if !doneruMessage.isEmpty { Text(doneruMessage).font(.caption) }
+                    Text("URLは端末のキーチェーンに保存します。他人に公開しないでください。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("アラート") {
                     Toggle(
-                        "Streamlabs / StreamElementsを再生",
+                        "Streamlabs / StreamElements / どねるを再生",
                         isOn:
                             $store.alertsVisible
                     )
@@ -2658,7 +2694,7 @@ struct SimpleSettingsView: View {
                         isOn: $store.keepScreenAwakeForAlerts
                     )
 
-                    Text("Streamlabs / StreamElementsのWidget URLを透明ブラウザで再生します。アプリを表示中のみ動作し、バックグラウンドや画面ロック中の再生はiOSの制限により保証されません。")
+                    Text("Streamlabs / StreamElements / どねるのWidget URLを透明ブラウザで再生します。アプリを表示中のみ動作し、バックグラウンドや画面ロック中の再生はiOSの制限により保証されません。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 

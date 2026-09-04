@@ -145,10 +145,23 @@ struct AlertWebView: UIViewRepresentable {
     static func dismantleUIView(_ view: AlertCanvasView, coordinator: ()) { view.stop() }
 }
 
+func validAlertWidgetURL(_ raw: String) -> URL? {
+    guard !raw.isEmpty, !raw.contains(where: { $0.isWhitespace }),
+          let parts = URLComponents(string: raw), parts.scheme == "https",
+          let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil,
+          let url = parts.url else { return nil }
+    return url
+}
+
 struct AlertOverlay: View {
     @EnvironmentObject var store: AppStore
     var body: some View {
         ZStack {
+            if let url = validAlertWidgetURL(store.doneruWidgetURL) {
+                AlertWebView(url: url, reloadToken: $store.alertReloadToken)
+                    .allowsHitTesting(false)
+                    .opacity(store.alertsVisible ? 1 : 0)
+            }
             ForEach(store.channels.filter { $0.enabled }) { channel in
                 if let raw = KeychainStore.read(channel.alertURLKey), let url = URL(string: raw), !raw.isEmpty {
                     AlertWebView(url: url, reloadToken: $store.alertReloadToken)
