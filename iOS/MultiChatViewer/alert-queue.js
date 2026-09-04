@@ -10,7 +10,10 @@
   const play = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function(...args) {
     const queue = controller();
-    if (!queue?.allowsMedia()) { queue?.mediaFault(); return Promise.reject(new Error('Notification is not active')); }
+    // Cross-origin provider frames cannot reach the top coordinator. Their
+    // parent adapter already controls when the alert starts, so do not mute them.
+    if (!queue) return play.apply(this,args);
+    if (!queue.allowsMedia()) { queue.mediaFault(); return Promise.reject(new Error('Notification is not active')); }
     queue.trackMedia(this);
     return play.apply(this,args);
   };
@@ -18,7 +21,8 @@
     const start = AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start = function(...args) {
       const queue = controller();
-      if (!queue?.allowsMedia()) { queue?.mediaFault(); return; }
+      if (!queue) return start.apply(this,args);
+      if (!queue.allowsMedia()) { queue.mediaFault(); return; }
       queue.trackAudio(this);
       return start.apply(this,args);
     };
