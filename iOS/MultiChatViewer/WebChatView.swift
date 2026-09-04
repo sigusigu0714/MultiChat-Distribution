@@ -23,6 +23,18 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
     private var contentRect: CGRect?
     private var lastURL: URL?
     private var lastReloadToken: UUID?
+    private var queueSource: UUID?
+    func configureQueue(_ enabled: Bool) {
+        guard enabled, queueSource == nil else { return }
+        let id = UUID(); queueSource = id
+        let controller = web.configuration.userContentController
+        controller.add(AlertQueueBridge(source: id), name: "mcAlertBridge")
+        if let path = Bundle.main.url(forResource: "alert-queue", withExtension: "js"),
+           let script = try? String(contentsOf: path, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        AlertPlaybackQueue.shared.register(id, web: web) { [weak self] visible in self?.alpha = visible ? 1 : 0 }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -101,6 +113,13 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
     }
 
     func stop() {
+        if let id = queueSource {
+            queueSource = nil
+            web.configuration.userContentController.removeScriptMessageHandler(forName: "mcAlertBridge")
+            let oldWeb = web
+            AlertPlaybackQueue.shared.unregister(id) { oldWeb?.stopLoading(); oldWeb?.loadHTMLString("", baseURL: nil) }
+            return
+        }
         web.stopLoading()
         web.configuration.userContentController.removeScriptMessageHandler(forName: "alertCanvasSize", contentWorld: .defaultClient)
         web.loadHTMLString("", baseURL: nil)
@@ -206,8 +225,10 @@ private final class WeakAlertSizeHandler: NSObject, WKScriptMessageHandler {
 struct AlertWebView: UIViewRepresentable {
     let url: URL
     @Binding var reloadToken: UUID
+    var sequential = false
     func makeUIView(context: Context) -> AlertCanvasView {
         let view = AlertCanvasView()
+        view.configureQueue(sequential)
         view.load(url: url, reloadToken: reloadToken)
         return view
     }
@@ -231,14 +252,16 @@ struct AlertOverlay: View {
         ZStack {
             ForEach(0..<5, id: \.self) { index in
                 if let url = validAlertWidgetURL(store.standaloneWidgetURLs[index]) {
-                    AlertWebView(url: url, reloadToken: $store.alertReloadToken)
+                    AlertWebView(url: url, reloadToken: $store.alertReloadToken, sequential: store.sequentialAlerts)
+                        .id("\(store.alertReloadToken)-\(store.sequentialAlerts)-\(index)")
                         .allowsHitTesting(false)
                         .opacity(store.alertsVisible ? 1 : 0)
                 }
             }
             ForEach(store.channels.filter { $0.enabled }) { channel in
                 if let raw = KeychainStore.read(channel.alertURLKey), let url = URL(string: raw), !raw.isEmpty {
-                    AlertWebView(url: url, reloadToken: $store.alertReloadToken)
+                    AlertWebView(url: url, reloadToken: $store.alertReloadToken, sequential: store.sequentialAlerts)
+                        .id("\(store.alertReloadToken)-\(store.sequentialAlerts)-\(channel.id)")
                         .allowsHitTesting(false)
                         .opacity(store.alertsVisible ? 1 : 0)
                 }

@@ -24,6 +24,11 @@ jobs:
       - name: Test distribution profile validation
         run: python3 iOS/Tests/run_distribution_tests.py
 
+      - name: Test notification queue adapters
+        run: |
+          node iOS/Tests/alert-queue.test.cjs
+          python3 iOS/Tests/run_alert_queue_tests.py
+
       - name: Test alert canvas fitting
         run: python3 iOS/Tests/run_alert_layout_tests.py
 

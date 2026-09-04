@@ -120,6 +120,9 @@ final class AppStore: ObservableObject {
 
     @Published var hiddenDuplicateCount = 0
     @Published var alertReloadToken = UUID()
+    @Published var sequentialAlerts = UserDefaults.standard.bool(forKey: "sequential-alerts") {
+        didSet { UserDefaults.standard.set(sequentialAlerts, forKey: "sequential-alerts"); alertReloadToken = UUID() }
+    }
     @Published var selectedFilter: Platform? = nil
     @Published var showConnectSheet = false
     @Published var oauthMessage: String?
@@ -2704,6 +2707,10 @@ struct SimpleSettingsView: View {
                 }
 
                 Section("ウィジェット（最大5個）") {
+                    Toggle("通知を順番に再生（試験運用）", isOn: $store.sequentialAlerts)
+                    if store.sequentialAlerts { AlertQueueStatusView() }
+                    Text("StreamElements・Streamlabs・どねるの通知を、アプリが受け付けた順に再生します。未対応のカスタム形式では停止する場合があります。再読み込みで待ち通知を取り消します。")
+                        .font(.caption)
                     Text("どねる・StreamElements・StreamlabsのウィジェットURLを登録できます。チャット連携は不要です。")
                         .font(.caption).foregroundStyle(.secondary)
                     ForEach(0..<5, id: \.self) { index in
