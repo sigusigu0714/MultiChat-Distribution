@@ -93,6 +93,8 @@ async function until(end) {
   await vm.runInContext('new HTMLMediaElement().play().then(()=>{throw Error("unowned audio played")},()=>{})',pressure);
   assert.equal(vm.runInContext('__mcAlertQueue.allowsMedia()',pressure),false);
   const wrapped=page('streamlabs.com');
+  await vm.runInContext('new HTMLMediaElement().play().catch(()=>{})',wrapped);
+  assert.equal(vm.runInContext('__mcAlertQueue.allowsMedia()',wrapped),true,'bootstrap media switches only that source to normal display');
   await until(47000);
   assert(events.some(e=>e[0]==='streamlabs.com' && e[1]==='unsupported'));
   assert.equal(vm.runInContext('__mcAlertQueue.allowsMedia()',wrapped),true,'unsupported wrapper remains usable');

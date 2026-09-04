@@ -35,6 +35,7 @@
     else window.webkit?.messageHandlers?.mcAlertBridge?.postMessage(message);
   };
   const fault = () => { if (!failed) { failed = true; send('fault'); } };
+  const passThrough = () => { if (!bypass && !failed) { bypass = true; send('unsupported'); } };
   const admit = run => {
     const sequence = ++serial;
     items.set(sequence, run);
@@ -50,7 +51,7 @@
   };
   window.__mcAlertQueue = Object.freeze({
     allowsMedia() { return bypass || (!failed && active !== null); },
-    mediaFault: fault,
+    mediaFault() { if (!ready && active === null) passThrough(); else fault(); },
     trackMedia(element) { media.add(element); },
     trackAudio(node) { audioNodes.add(node); node.addEventListener('ended', () => audioNodes.delete(node), {once:true}); },
     grant(sequence) {
@@ -69,6 +70,7 @@
     if (Object.getOwnPropertyDescriptor(Object.prototype, key)) { fault(); return; }
     const setter = function(value) {
       Object.defineProperty(this, key, {value, writable:true, configurable:true, enumerable:true});
+      if (bypass) { cleanup(); return; }
       try { if (accept(this, value)) cleanup(); } catch (_) { cleanup(); fault(); }
     };
     const cleanup = () => {
@@ -197,5 +199,5 @@
   // Some saved browser sources use Streamlabs as a wrapper around an external
   // frame rather than the Alert Box runtime. Keep that source usable without
   // disabling every compatible widget in the shared queue.
-  later(() => { if (!ready && !failed) { bypass = true; send('unsupported'); } }, 30000);
+  later(() => { if (!ready && !failed) passThrough(); }, 5000);
 })();
