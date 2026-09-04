@@ -760,6 +760,36 @@ enum DistributionSetupError: LocalizedError {
     }
 }
 
+
+// Device-owner transfer only. This is never a public distribution profile.
+struct DeviceSetupPackage: Codable {
+    let version: Int
+    let profile: DistributionProfile
+    let obsToken: String?
+
+    static func read(_ data: Data) throws -> DeviceSetupPackage {
+        guard data.count <= 16_384,
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys).isSubset(of: ["version", "profile", "obsToken"]),
+              let profileObject = object["profile"] as? [String: Any] else {
+            throw DistributionSetupError.invalid("個人用設定ファイルを確認してください")
+        }
+        _ = try DistributionProfile.read(JSONSerialization.data(withJSONObject: profileObject))
+        let package = try JSONDecoder().decode(Self.self, from: data)
+        guard package.version == 1 else {
+            throw DistributionSetupError.invalid("この設定ファイルのバージョンには対応していません")
+        }
+        if let token = package.obsToken {
+            guard !token.isEmpty, token.utf8.count <= 512,
+                  token.rangeOfCharacter(from: .controlCharacters) == nil,
+                  !(package.profile.obsRelayURL ?? "").isEmpty else {
+                throw DistributionSetupError.invalid("OBSの個人用設定を確認してください")
+            }
+        }
+        return package
+    }
+}
+
 struct DistributionSetupView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var twitch: TwitchCommentController
@@ -774,6 +804,8 @@ struct DistributionSetupView: View {
     @State private var showAdvanced = false
     @State private var errorMessage: String?
     @State private var imported = false
+    @State private var importedAdminToken: String?
+    @State private var importedTokenRelayURL = ""
 
     var body: some View {
         NavigationStack {
@@ -788,6 +820,10 @@ struct DistributionSetupView: View {
                     if imported {
                         Text("設定を読み込みました。接続先を確認してから保存してください。")
                             .font(.caption)
+                    }
+                    if importedAdminToken != nil {
+                        Text("OBS管理キーを含む個人用設定です。自分の接続先であることを確認して保存してください。このファイルは他の人へ共有しないでください。")
+                            .font(.caption).foregroundStyle(.orange)
                     }
                 }
                 Section("1. チャットの接続先") {
@@ -845,7 +881,20 @@ struct DistributionSetupView: View {
                     guard (values.fileSize ?? 0) <= 16_384 else {
                         throw DistributionSetupError.invalid("設定ファイルが大きすぎます")
                     }
-                    let profile = try DistributionProfile.read(Data(contentsOf: url))
+                    let data = try Data(contentsOf: url)
+                    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    let profile: DistributionProfile
+                    let adminToken: String?
+                    if object?["version"] != nil || object?["profile"] != nil {
+                        let package = try DeviceSetupPackage.read(data)
+                        profile = package.profile
+                        adminToken = package.obsToken
+                    } else {
+                        profile = try DistributionProfile.read(data)
+                        adminToken = nil
+                    }
+                    importedAdminToken = adminToken
+                    importedTokenRelayURL = adminToken == nil ? "" : (profile.obsRelayURL ?? "")
                     serverURL = profile.serverURL
                     relayURL = profile.obsRelayURL ?? ""
                     clientID = profile.twitchClientID ?? ""
@@ -873,6 +922,9 @@ struct DistributionSetupView: View {
         )
         do {
             try profile.validate()
+            if importedAdminToken != nil && profile.obsRelayURL != importedTokenRelayURL {
+                throw DistributionSetupError.invalid("個人用設定のOBS接続先が変更されています。正しい設定ファイルを読み込み直してください。")
+            }
             if store.serverURL != profile.serverURL {
                 store.disconnect()
                 for channel in store.channels {
@@ -891,6 +943,7 @@ struct DistributionSetupView: View {
             store.serverURL = profile.serverURL
             store.saveServerURL()
             remote.serverURL = profile.obsRelayURL ?? ""
+            if let adminToken = importedAdminToken { remote.adminToken = adminToken }
             twitch.oauthClientID = profile.twitchClientID ?? ""
             twitch.oauthRedirectURI = profile.twitchRedirectURI ?? ""
             setupComplete = true
