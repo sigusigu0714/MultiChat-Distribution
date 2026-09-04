@@ -24,7 +24,7 @@ print("PASS: 16 canvas/screen combinations preserve aspect ratio and all edges; 
 """
 with tempfile.TemporaryDirectory() as directory:
     test = Path(directory) / "main.swift"
-    test.write_text("import Foundation\n" + layout + tests, encoding="utf-8")
+    test.write_text("import Foundation\nimport CoreGraphics\n" + layout + tests, encoding="utf-8")
     binary = Path(directory) / "Tests"
     subprocess.run(["swiftc", str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=30)

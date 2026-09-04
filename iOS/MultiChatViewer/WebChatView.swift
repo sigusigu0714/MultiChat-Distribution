@@ -38,6 +38,7 @@ final class AlertCanvasView: UIView, WKScriptMessageHandler {
         web.isOpaque = false
         web.backgroundColor = .clear
         web.scrollView.backgroundColor = .clear
+        web.scrollView.contentInsetAdjustmentBehavior = .never
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.accessibilityIdentifier = "alert-widget"
